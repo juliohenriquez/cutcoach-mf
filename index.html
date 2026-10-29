@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Log to MacroFactor</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: #0b1220; color: #f5f7fb; padding: 24px;
+    }
+    .card {
+      width: 100%; max-width: 420px; background: #151c2c; border: 1px solid #2a3550;
+      border-radius: 20px; padding: 28px 24px; box-shadow: 0 16px 40px rgba(0,0,0,.35);
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    p { margin: 0 0 12px; line-height: 1.45; color: #b7c0d4; font-size: .95rem; }
+    .meta { font-size: .85rem; color: #8b97b0; margin-bottom: 20px; word-break: break-word; }
+    a.btn, button.btn {
+      display: block; width: 100%; text-align: center; text-decoration: none; border: 0;
+      background: #3d7cff; color: #fff; font-weight: 700; font-size: 1.1rem;
+      padding: 16px 18px; border-radius: 14px; cursor: pointer;
+    }
+    a.btn:active, button.btn:active { transform: scale(.98); }
+    .err { color: #ff8f8f; }
+    .ok { color: #8dffb0; }
+    .hint { margin-top: 16px; font-size: .8rem; color: #7f8aa3; }
+    ul { margin: 8px 0 0; padding-left: 1.1rem; color: #b7c0d4; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Log to MacroFactor</h1>
+    <p id="status">Preparing Shortcut link…</p>
+    <div class="meta" id="meta"></div>
+    <a class="btn" id="launch" href="#" style="display:none">Log to MacroFactor</a>
+    <p class="hint" id="hint"></p>
+  </main>
+  <script>
+(function () {
+  var DEFAULT_NAME = "Log Chat MacroFactor";
+  var statusEl = document.getElementById("status");
+  var metaEl = document.getElementById("meta");
+  var launchEl = document.getElementById("launch");
+  var hintEl = document.getElementById("hint");
+
+  function paramsFrom(searchOrHash) {
+    var s = searchOrHash || "";
+    if (s.charAt(0) === "?" || s.charAt(0) === "#") s = s.slice(1);
+    return new URLSearchParams(s);
+  }
+
+  // Prefer query string; fall back to fragment (keeps meal JSON out of server logs).
+  var q = paramsFrom(location.search);
+  if (![...q.keys()].length) q = paramsFrom(location.hash);
+
+  var name = q.get("name") || q.get("n") || DEFAULT_NAME;
+  var text = q.get("text") || q.get("t") || "";
+  var b64 = q.get("b64") || "";
+
+  if (!text && b64) {
+    try {
+      text = decodeURIComponent(escape(atob(b64.replace(/-/g, "+").replace(/_/g, "/"))));
+    } catch (e) {
+      statusEl.className = "err";
+      statusEl.textContent = "Could not decode b64 payload.";
+      return;
+    }
+  }
+
+  if (!text) {
+    statusEl.className = "err";
+    statusEl.textContent = "Missing meal data. Open a Cut Coach meal link.";
+    hintEl.textContent = "Expected ?text=… or #text=… (MacroFactor JSON array).";
+    return;
+  }
+
+  var foods;
+  try {
+    foods = JSON.parse(text);
+  } catch (e) {
+    statusEl.className = "err";
+    statusEl.textContent = "Meal JSON is invalid.";
+    return;
+  }
+
+  var list = Array.isArray(foods) ? foods : [foods];
+  var kcal = 0, protein = 0;
+  var names = [];
+  list.forEach(function (f) {
+    names.push(f.name || "food");
+    if (f.nutrients) {
+      kcal += Number(f.nutrients.energy) || 0;
+      protein += Number(f.nutrients.protein) || 0;
+    }
+  });
+
+  var shortcutsUrl =
+    "shortcuts://run-shortcut?name=" + encodeURIComponent(name) +
+    "&input=text&text=" + encodeURIComponent(text);
+
+  launchEl.href = shortcutsUrl;
+  launchEl.style.display = "block";
+  statusEl.className = "ok";
+  statusEl.textContent = "Ready — tap to log " + list.length + " item" + (list.length === 1 ? "" : "s") + ".";
+  metaEl.innerHTML =
+    "<strong>" + Math.round(kcal) + " kcal</strong> · " +
+    Math.round(protein) + " g protein<br><ul>" +
+    names.map(function (n) { return "<li>" + n.replace(/</g, "&lt;") + "</li>"; }).join("") +
+    "</ul>";
+  hintEl.textContent = "Opens Shortcuts → “" + name + "”. Logs at the moment you confirm.";
+
+  // Auto-try once (Safari may still require the tap).
+  setTimeout(function () {
+    try { window.location.href = shortcutsUrl; } catch (e) {}
+  }, 350);
+})();
+  </script>
+</body>
+</html>
